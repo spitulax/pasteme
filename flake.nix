@@ -1,12 +1,12 @@
 {
-  description = "An Odin project";
+  description = "A very simple program to quickly copy frequently used file to the current directory.";
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     mypkgs.url = "github:spitulax/mypkgs";
   };
 
-  outputs = { self, nixpkgs, mypkgs, ... }:
+  outputs = { self, nixpkgs, mypkgs, ... }@inputs:
     let
       inherit (nixpkgs) lib;
       systems = [ "x86_64-linux" "aarch64-linux" ];
@@ -16,19 +16,31 @@
           inherit system;
           overlays = [
             (final: prev: {
-              inherit (mypkgs.packages.${final.system}) odin;
+              odin = mypkgs.packages.${final.system}.odin-nightly;
             })
+            self.overlays.default
           ];
         });
     in
     {
+      overlays = import ./nix/overlays.nix { inherit self lib inputs; };
+
+      packages = eachSystem (system:
+        let
+          pkgs = pkgsFor.${system};
+        in
+        {
+          default = self.packages.${system}.pasteme;
+          inherit (pkgs) pasteme pasteme-debug;
+        });
+
       devShells = eachSystem (system:
         let
           pkgs = pkgsFor.${ system};
         in
         {
           default = pkgs.mkShell {
-            name = "foobar" + "-shell";
+            name = lib.getName self.packages.${system}.default + "-shell";
             nativeBuildInputs = with pkgs; [
               odin
             ];
