@@ -46,3 +46,34 @@ concat_string_sep :: proc(strs: []string, sep: string, allocator := context.allo
     return strings.clone(strings.to_string(sb), allocator)
 }
 
+// metric = multiple of 1000 instead of 1024
+human_readable_size :: proc(
+    bytes: i64,
+    metric: bool = false,
+    allocator := context.allocator,
+) -> string {
+    MAX_UNIT :: 5
+    units: [MAX_UNIT]string
+    if metric {
+        units = {"B", "kB", "MB", "GB", "TB"}
+    } else {
+        units = {"B", "KiB", "MiB", "GiB", "TiB"}
+    }
+    multiple := 1000 if metric else 1024
+    order: int
+
+    for i in 0 ..< MAX_UNIT {
+        if f32(bytes) < math.pow(f32(multiple), f32(i + 1)) {
+            order = i
+            break
+        }
+    }
+
+    return fmt.aprintf(
+        "%.3v %v",
+        f32(bytes) / f32(math.pow(f32(multiple), f32(order))),
+        units[order],
+        allocator = alloc,
+    )
+}
+

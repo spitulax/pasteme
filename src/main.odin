@@ -139,8 +139,7 @@ display_menu :: proc(
 
             fmt.printf(" [%v]", len(contents))
         } else {
-            // TODO: human readable size
-            fmt.printf(" [%vb]", x.size)
+            fmt.printf(" [%v]", human_readable_size(x.size, allocator = context.temp_allocator))
         }
         fmt.print("\n")
         ansi_reset()
