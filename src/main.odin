@@ -23,17 +23,18 @@ UNIX_OS :: OS_Set{.Linux, .Darwin, .FreeBSD, .OpenBSD}
 start :: proc() -> (ok: bool) {
     userdata_dirname: string
     defer delete(userdata_dirname)
-    when ODIN_OS == .Linux {
-        home := os.get_env("HOME", context.temp_allocator)
+    when ODIN_OS in UNIX_OS {
         config_home := os.get_env("XDG_CONFIG_HOME", context.temp_allocator)
         if config_home == "" {
+            home := os.get_env("HOME", context.temp_allocator)
+            assert(home != "")
             config_home = filepath.join({home, ".config"})
         }
         userdata_dirname = filepath.join({config_home, "pasteme"})
-    } else when ODIN_OS in UNIX_OS {
-        todo()
     } else when ODIN_OS == .Windows {
-        todo()
+        appdata := os.get_env("APPDATA", context.temp_allocator)
+        assert(appdata != "")
+        userdata_dirname = filepath.join({appdata, "pasteme"})
     } else {
         #panic("Unsupported operating system: " + ODIN_OS)
     }
@@ -210,24 +211,28 @@ copy_chosen :: proc(
             copy_inside = false
         }
 
+        when ODIN_OS == .Windows {
+            target_path := filepath.join({pwd, filepath.base(fullpath)})
+        }
+
         if copy_inside {
             when ODIN_OS in UNIX_OS {
                 cmd = fmt.ctprintf("cp -r %[0]s/* %[0]s/.* %[1]s", fullpath, pwd)
             } else when ODIN_OS == .Windows {
-                todo()
+                cmd = fmt.ctprintf("xcopy %s %s /s /e /y /q", fullpath, pwd)
             }
         } else {
             when ODIN_OS in UNIX_OS {
                 cmd = fmt.ctprintf("cp -r %s %s", fullpath, pwd)
             } else when ODIN_OS == .Windows {
-                todo()
+                cmd = fmt.ctprint("xcopy %s %s /s /e /y /q /i", fullpath, target_path)
             }
         }
     } else {
         when ODIN_OS in UNIX_OS {
             cmd = fmt.ctprintf("cp %s %s", fullpath, pwd)
         } else when ODIN_OS == .Windows {
-            todo()
+            cmd = fmt.ctprint("copy /y %s %s", fullpath, pwd)
         }
     }
 

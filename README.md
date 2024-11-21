@@ -18,4 +18,4 @@ $ ./build/pasteme
 
 ## Caveat
 
-Only supports Linux (for now).
+Untested on Windows since I couldn't get odin compiler to work inside wine.
