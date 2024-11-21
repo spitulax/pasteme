@@ -11,6 +11,7 @@ import "core:mem"
 import "core:os"
 import "core:path/filepath"
 import "core:strconv"
+import "core:strings"
 _ :: mem
 
 PROG_NAME :: #config(PROG_NAME, "")
@@ -83,6 +84,13 @@ read_userdata_dir :: proc(userdata_dirname: string) -> (files: []os.File_Info, o
         return
     }
 
+    for &file in files {
+        if strings.has_prefix(file.name, ".") {
+            delete(file.fullpath)
+            file = {}
+        }
+    }
+
     return files, true
 }
 
@@ -102,6 +110,8 @@ display_menu :: proc(
 ) {
     dirs_contents = make([][]os.File_Info, len(files), alloc)
     for x, i in files {
+        if x.name == "" {continue}
+
         ansi_graphic(ansi.FG_GREEN)
         fmt.printf("%d)", i + 1)
         ansi_reset()
@@ -202,7 +212,7 @@ copy_chosen :: proc(
 
         if copy_inside {
             when ODIN_OS in UNIX_OS {
-                cmd = fmt.ctprintf("cp -r %s/* %s", fullpath, pwd)
+                cmd = fmt.ctprintf("cp -r %[0]s/* %[0]s/.* %[1]s", fullpath, pwd)
             } else when ODIN_OS == .Windows {
                 todo()
             }
