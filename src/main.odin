@@ -53,14 +53,14 @@ start :: proc() -> (ok: bool) {
 
     files := read_userdata_dir(userdata_dirname) or_return
     defer delete_file_infos(files)
-    dirs_contents := display_menu(files) or_return
+    dirs_contents := list_dir(files, true) or_return
     defer {
-        for x in dirs_contents {
+        for x in dirs_contents.? {
             delete_file_infos(x)
         }
-        delete(dirs_contents)
+        delete(dirs_contents.?)
     }
-    copy_chosen(ask(files, dirs_contents) or_return) or_return
+    copy_chosen(ask(files, dirs_contents.?) or_return) or_return
 
     return true
 }
@@ -76,13 +76,13 @@ read_userdata_dir :: proc(userdata_dirname: string) -> (files: []os.File_Info, o
 
     files_err: os.Error
     files, files_err = os.read_dir(userdata_dir, 0)
-    defer if !ok {
-        delete_file_infos(files)
-    }
     if files_err != nil {
         fmt.eprintfln("Failed to read `%s`: %v", userdata_dirname, files_err)
         ok = false
         return
+    }
+    defer if !ok {
+        delete_file_infos(files)
     }
 
     for &file in files {
@@ -92,61 +92,15 @@ read_userdata_dir :: proc(userdata_dirname: string) -> (files: []os.File_Info, o
         }
     }
 
-    return files, true
-}
-
-delete_file_infos :: proc(files: []os.File_Info) {
-    for x in files {
-        delete(x.fullpath)
-    }
-    delete(files)
-}
-
-display_menu :: proc(
-    files: []os.File_Info,
-    alloc := context.allocator,
-) -> (
-    dirs_contents: [][]os.File_Info,
-    ok: bool,
-) {
-    dirs_contents = make([][]os.File_Info, len(files), alloc)
-    for x, i in files {
-        if x.name == "" {continue}
-
-        ansi_graphic(ansi.FG_GREEN)
-        fmt.printf("%d)", i + 1)
-        ansi_reset()
-        if x.is_dir {
-            ansi_graphic(ansi.BOLD, ansi.FG_BLUE)
-        }
-        fmt.printf(" %s", x.fullpath)
-        if x.is_dir {
-            dir, dir_err := os.open(x.fullpath)
-            if dir_err != nil {
-                fmt.eprintfln("Failed to open `%s`: %v", x.fullpath, dir_err)
-                ok = false
-                return
-            }
-            defer assert(os.close(dir) == nil)
-
-            contents, contents_err := os.read_dir(dir, 0, alloc)
-            if contents_err != nil {
-                fmt.eprintfln("Failed to read `%s`: %v", x.fullpath, contents_err)
-                ok = false
-                return
-            }
-            dirs_contents[i] = contents
-
-            fmt.printf(" [%v]", len(contents))
-        } else {
-            fmt.printf(" [%v]", human_readable_size(x.size, allocator = context.temp_allocator))
-        }
-        fmt.print("\n")
-        ansi_reset()
-    }
-
     ok = true
     return
+}
+
+delete_file_infos :: proc(files: []os.File_Info, alloc := context.allocator) {
+    for x in files {
+        delete(x.fullpath, alloc)
+    }
+    delete(files, alloc)
 }
 
 ask :: proc(
@@ -171,13 +125,22 @@ ask :: proc(
         return
     }
 
-    choice_zero_index := choice - 1 // a little bit funny
+    choice_zero_index := choice - 1 // this is funny
     chosen_file := files[choice_zero_index]
 
-    return chosen_file.fullpath,
-        chosen_file.is_dir,
-        (dirs_contents[choice_zero_index] if chosen_file.is_dir else nil),
-        true
+    if chosen_file.is_dir {
+        dir_contents = dirs_contents[choice_zero_index]
+        is_dir = true
+
+        ansi_graphic(ansi.BOLD, ansi.FG_CYAN)
+        fmt.println("Directory contents: ")
+        ansi_reset()
+        list_dir(dir_contents.?) or_return
+    }
+
+    fullpath = chosen_file.fullpath
+    ok = true
+    return
 }
 
 copy_chosen :: proc(
