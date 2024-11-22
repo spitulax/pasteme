@@ -1,6 +1,5 @@
 package pasteme
 
-// TODO: Support for other than Linux
 // TODO: Search UI like fzf
 
 import "base:runtime"

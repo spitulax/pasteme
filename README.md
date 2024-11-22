@@ -12,7 +12,8 @@ $ ./build/pasteme
 
 - Put your files or project templates in this directory:
 
-> - Linux: `$XDG_CONFIG_HOME/pasteme/` or `~/.config/pasteme/`
+> - Linux, MacOS, *BSD: `$XDG_CONFIG_HOME/pasteme/` or `~/.config/pasteme/`
+> - Windows: `%APPDATA%\pasteme\`
 
 - Go to the directory you want to copy the file into and run the program from there.
 
