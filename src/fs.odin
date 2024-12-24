@@ -4,6 +4,8 @@ import "base:runtime"
 import "core:encoding/ansi"
 import "core:fmt"
 import "core:os"
+import path "core:path/filepath"
+import "core:slice"
 import "core:strings"
 import sp "deps:subprocess.odin"
 
@@ -18,23 +20,31 @@ list_git :: proc(
     runtime.DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD(alloc == context.temp_allocator)
 
     old_dir := os.get_current_directory(context.temp_allocator)
-    chdir(dirpath) or_return
+    chdir(g_userdata_path) or_return
 
-    git, git_err := sp.command_make("git")
-    if git_err == sp.General_Error.Program_Not_Found {
-        fmt.eprintfln("`git` is not found")
+    sp.command_clear(&g_git)
+    sp.command_append(&g_git, "write-tree", "--missing-ok")
+    write_tree_res := sp.unwrap(sp.command_run(g_git), "Could not run `git write-tree`") or_return
+    defer sp.result_destroy(&write_tree_res)
+    if !sp.result_success(write_tree_res) {
+        fmt.eprintln("`git write-tree` exited with:", write_tree_res.exit)
         return
-    } else if git_err != nil {
-        sp.unwrap(git_err) or_return
     }
-    defer sp.command_destroy(&git)
+    write_tree := trim_nl(string(write_tree_res.stdout))
 
-    git.opts.output = .Capture
-    sp.command_append(&git, "ls-tree", "--name-only", "--full-tree", "HEAD")
-    result := sp.unwrap(sp.command_run(git), "Could not run `git`") or_return
+    sp.command_clear(&g_git)
+    sp.command_append(
+        &g_git,
+        "ls-tree",
+        "--name-only",
+        "--full-tree",
+        write_tree,
+        fmt.tprintf("%s%s", dirpath, path.SEPARATOR_STRING),
+    )
+    result := sp.unwrap(sp.command_run(g_git), "Could not run `git ls-tree`") or_return
     defer sp.result_destroy(&result)
     if !sp.result_success(result) {
-        fmt.eprintln("`git` exited with:", result.exit)
+        fmt.eprintln("`git ls-tree` exited with:", result.exit)
         return
     }
 
@@ -42,7 +52,6 @@ list_git :: proc(
     files = make([]os.File_Info, len(file_names), alloc)
     defer if !ok {
         os.file_info_slice_delete(files, alloc)
-        delete(files, alloc)
     }
     for x, i in file_names {
         if x == ".gitignore" {
@@ -61,6 +70,42 @@ list_git :: proc(
     return files, true
 }
 
+list_git_paths_rec :: proc(
+    dirpath: string,
+    alloc := context.allocator,
+) -> (
+    paths: []string,
+    ok: bool,
+) {
+    process :: proc(
+        buf: ^[dynamic]string,
+        dirpath: string,
+        alloc := context.allocator,
+    ) -> (
+        ok: bool,
+    ) {
+        files := list_git(dirpath) or_return
+        defer os.file_info_slice_delete(files)
+        for x in files {
+            if x.is_dir {
+                process(buf, x.fullpath, alloc) or_return
+            } else {
+                append(buf, strings.clone(x.fullpath, alloc))
+            }
+        }
+        return true
+    }
+
+    paths_buf := make([dynamic]string, alloc)
+    defer if !ok {
+        delete(paths_buf)
+    }
+
+    process(&paths_buf, dirpath, alloc) or_return
+
+    return paths_buf[:], true
+}
+
 list_dir :: proc(
     dirpath: string,
     hidden: bool = false,
@@ -71,12 +116,8 @@ list_dir :: proc(
 ) {
     runtime.DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD(alloc == context.temp_allocator)
 
-    dir, dir_err := os.open(dirpath)
-    if dir_err != nil {
-        fmt.eprintfln("Failed to open `%s`: %v", dirpath, dir_err)
-        return
-    }
-    defer fmt.assertf(os.close(dir) == nil, "Could not close `%s`", dirpath)
+    dir := open(dirpath) or_return
+    defer close(&dir)
 
     files_all, files_err := os.read_dir(dir, 0, alloc)
     if files_err != nil {
@@ -96,7 +137,55 @@ list_dir :: proc(
         append(&files_buf, file_info_clone(file, alloc))
     }
 
+    slice.sort_by(files_buf[:], proc(i, j: os.File_Info) -> bool {
+        if i.is_dir && !j.is_dir {
+            return false
+        } else if !i.is_dir && j.is_dir {
+            return true
+        } else {
+            return i.name < j.name
+        }
+    })
+
     return files_buf[:], true
+}
+
+list_dir_paths_rec :: proc(
+    dirpath: string,
+    hidden: bool = false,
+    alloc := context.allocator,
+) -> (
+    paths: []string,
+    ok: bool,
+) {
+    process :: proc(
+        buf: ^[dynamic]string,
+        dirpath: string,
+        hidden: bool = false,
+        alloc := context.allocator,
+    ) -> (
+        ok: bool,
+    ) {
+        files := list_dir(dirpath, hidden) or_return
+        defer os.file_info_slice_delete(files)
+        for x in files {
+            if x.is_dir {
+                process(buf, x.fullpath, hidden, alloc) or_return
+            } else {
+                append(buf, strings.clone(x.fullpath, alloc))
+            }
+        }
+        return true
+    }
+
+    paths_buf := make([dynamic]string, alloc)
+    defer if !ok {
+        delete(paths_buf)
+    }
+
+    process(&paths_buf, dirpath, hidden, alloc) or_return
+
+    return paths_buf[:], true
 }
 
 // Allocates if `return_contents`
@@ -114,10 +203,11 @@ list_dirs :: proc(
     if return_contents {
         dirs_contents = make([][]os.File_Info, len(files), alloc)
     }
+    defer if return_contents && !ok {
+        delete(dirs_contents.?, alloc)
+    }
 
     for x, i in files {
-        if x.name == "" {continue}
-
         ansi_graphic(ansi.FG_GREEN)
         fmt.printf("%d)", i + 1)
         ansi_reset()
@@ -126,19 +216,11 @@ list_dirs :: proc(
         }
         fmt.printf(" %s", x.fullpath)
         if x.is_dir {
-            dir, dir_err := os.open(x.fullpath)
-            if dir_err != nil {
-                fmt.eprintfln("Failed to open `%s`: %v", x.fullpath, dir_err)
-                ok = false
-                return
-            }
-            defer assert(os.close(dir) == nil)
-
-            contents, contents_err := os.read_dir(dir, 0, alloc)
-            if contents_err != nil {
-                fmt.eprintfln("Failed to read `%s`: %v", x.fullpath, contents_err)
-                ok = false
-                return
+            contents: []os.File_Info
+            if g_userdata_is_git {
+                contents = list_git(x.fullpath, alloc) or_return
+            } else {
+                contents = list_dir(x.fullpath, true, alloc) or_return
             }
             defer if !return_contents {
                 os.file_info_slice_delete(contents, alloc)

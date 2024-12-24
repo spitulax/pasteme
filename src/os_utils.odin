@@ -13,6 +13,33 @@ chdir :: proc(path: string) -> (ok: bool) {
     return true
 }
 
+open :: proc(
+    path: string,
+    flags: int = os.O_RDONLY,
+    mode: int = 0o000,
+) -> (
+    fd: os.Handle,
+    ok: bool,
+) {
+    err: os.Error
+    fd, err = os.open(path)
+    if err != nil {
+        fmt.eprintfln("Failed to open `%s`: %v", path, err)
+        return
+    }
+    return fd, true
+}
+
+close :: proc(fd: ^os.Handle) -> (ok: bool) {
+    if err := os.close(fd^); err != nil {
+        path := os.absolute_path_from_handle(fd^) or_else "<handle>"
+        fmt.eprintfln("Failed to close `%s`: %v", path, err)
+        return
+    }
+    fd^ = {}
+    return true
+}
+
 file_info_clone :: proc(self: os.File_Info, alloc := context.allocator) -> os.File_Info {
     res := self
     res.fullpath = strings.clone(self.fullpath, alloc)

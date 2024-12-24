@@ -6,6 +6,7 @@ import "core:fmt"
 import "core:math"
 import "core:os"
 import "core:strings"
+import sp "deps:subprocess.odin"
 
 
 when ODIN_OS == .Windows {
@@ -14,10 +15,6 @@ when ODIN_OS == .Windows {
     NL :: "\n"
 }
 
-
-todo :: proc "contextless" (loc := #caller_location) -> ! {
-    panic_contextless("Unimplemented", loc)
-}
 
 ansi_reset :: proc() {
     fmt.print(ansi.CSI + ansi.RESET + ansi.SGR)
@@ -89,5 +86,35 @@ human_readable_size :: proc(
 
 trim_nl :: proc(s: string) -> string {
     return strings.trim_suffix(s, NL)
+}
+
+is_git_dir :: proc(dirpath: string) -> (git: bool, ok: bool) {
+    if !g_git.prog.found {
+        return false, true
+    }
+
+    old_dir := os.get_current_directory(context.temp_allocator)
+    chdir(dirpath) or_return
+
+    sp.command_clear(&g_git)
+    sp.command_append(&g_git, "rev-parse")
+    result := sp.unwrap(
+        sp.command_run(g_git, sp.Exec_Opts{output = .Silent}),
+        "Could not run `git rev-parse`",
+    ) or_return
+    defer sp.result_destroy(&result)
+
+    chdir(old_dir) or_return
+
+    git = sp.result_success(result)
+    ok = true
+    return
+}
+
+delete_strings :: proc(strs: []string, alloc := context.allocator) {
+    for str in strs {
+        delete(str, alloc)
+    }
+    delete(strs, alloc)
 }
 
