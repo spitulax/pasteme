@@ -41,7 +41,7 @@ scan :: proc(alloc := context.allocator) -> (input: string, ok: bool) {
         ok = false
         return
     }
-    return strings.clone(string(buf[:read_n - 1]), alloc), true // -1 because of newline
+    return strings.clone(string(buf[:read_n]), alloc), true
 }
 
 concat_string_sep :: proc(strs: []string, sep: string, alloc := context.allocator) -> string {

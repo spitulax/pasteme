@@ -9,8 +9,9 @@ import "core:encoding/ansi"
 import "core:fmt"
 import "core:mem"
 import "core:os"
-import "core:path/filepath"
+import path "core:path/filepath"
 import "core:strconv"
+import "core:strings"
 _ :: mem
 
 
@@ -30,13 +31,13 @@ start :: proc() -> (ok: bool) {
         if config_home == "" {
             home := os.get_env("HOME", context.temp_allocator)
             assert(home != "", "$HOME is not defined")
-            config_home = filepath.join({home, ".config"})
+            config_home = path.join({home, ".config"})
         }
-        userdata_path = filepath.join({config_home, "pasteme"})
+        userdata_path = path.join({config_home, "pasteme"})
     } else when ODIN_OS == .Windows {
         appdata := os.get_env("APPDATA", context.temp_allocator)
         assert(appdata != "", "%APPDATA% is not defined")
-        userdata_path = filepath.join({appdata, "pasteme"})
+        userdata_path = path.join({appdata, "pasteme"})
     } else {
         #panic("Unsupported operating system: " + ODIN_OS)
     }
@@ -71,7 +72,7 @@ read_userdata_dir :: proc(
 ) {
     runtime.DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD(alloc == context.temp_allocator)
 
-    if os.exists(".git") {
+    if os.exists(path.join({userdata_path, ".git"}, context.temp_allocator)) {
         files = list_git(userdata_path, alloc) or_return
     } else {
         files = list_dir(userdata_path, false, alloc) or_return
@@ -93,17 +94,29 @@ ask :: proc(
     dir_contents: Maybe([]os.File_Info),
     ok: bool,
 ) {
-    ansi_graphic(ansi.BOLD, ansi.FG_CYAN)
-    fmt.print("Choose file or directory to copy: ")
-    ansi_reset()
+    runtime.DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD()
 
-    input := scan() or_return
-    defer delete(input)
-    choice, choice_ok := strconv.parse_int(input)
-    if !choice_ok || choice == 0 || choice > len(files) {
-        fmt.eprintfln("`%s` is invalid", input)
-        ok = false
-        return
+    choice: int
+    for {
+        ansi_graphic(ansi.BOLD, ansi.FG_CYAN)
+        fmt.print("Choose file or directory to copy: ")
+        ansi_reset()
+
+        input := scan(context.temp_allocator) or_return
+        if !strings.ends_with(input, NL) {
+            fmt.println()
+        }
+        if len(input) == 0 {
+            continue
+        }
+
+        choice_ok: bool
+        choice, choice_ok = strconv.parse_int(trim_nl(input))
+        if !choice_ok || choice == 0 || choice > len(files) {
+            fmt.eprintfln("`%s` is invalid", trim_nl(input))
+            continue
+        }
+        break
     }
 
     choice_zero_index := choice - 1 // this is funny
@@ -145,9 +158,8 @@ copy_chosen :: proc(
         )
         ansi_reset()
 
-        input := scan() or_return
-        defer delete(input)
-        switch input {
+        input := scan(context.temp_allocator) or_return
+        switch trim_nl(input) {
         case "y", "Y":
             copy_inside = true
         case:
@@ -188,7 +200,7 @@ copy_chosen :: proc(
     ansi_reset()
     if copy_inside {
         for x in dir_contents.? {
-            rel_path, rel_path_err := filepath.rel(fullpath, x.fullpath, context.temp_allocator)
+            rel_path, rel_path_err := path.rel(fullpath, x.fullpath, context.temp_allocator)
             if rel_path_err != nil {
                 fmt.eprintfln(
                     "Failed to compute relative path of `%s` from `%s`",
