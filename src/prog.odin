@@ -29,17 +29,7 @@ setup_userdata :: proc(alloc := context.allocator) -> (ok: bool) {
         delete(g_userdata_path)
     }
 
-    if !os.exists(g_userdata_path) {
-        if err := os.make_directory(g_userdata_path); err != nil {
-            fmt.eprintfln("Unable to create directory in `%s`: %v", g_userdata_path, err)
-            return false
-        }
-    } else {
-        if !os.is_dir(g_userdata_path) {
-            fmt.eprintfln("`%s` already exists but it's not a directory", g_userdata_path)
-            return false
-        }
-    }
+    mkdir_if_not_exist(g_userdata_path) or_return
 
     g_userdata_is_git = is_git_dir(g_userdata_path) or_return
 
@@ -111,24 +101,6 @@ copy_chosen :: proc(fullpath: string, dir_contents: Maybe([]os.File_Info) = nil)
 
     pwd := os.get_current_directory(context.temp_allocator)
     is_dir := dir_contents != nil
-
-    paths_to_copy: []string
-    if is_dir {
-        if g_userdata_is_git {
-            paths_to_copy = list_git_paths_rec(fullpath) or_return
-        } else {
-            paths_to_copy = list_dir_paths_rec(fullpath, true) or_return
-        }
-    } else {
-        paths_to_copy = make([]string, 1)
-        paths_to_copy[0] = fullpath
-    }
-    defer if is_dir {
-        delete_strings(paths_to_copy)
-    } else {
-        delete(paths_to_copy)
-    }
-
     copy_inside: bool
 
     if is_dir {
@@ -151,46 +123,23 @@ copy_chosen :: proc(fullpath: string, dir_contents: Maybe([]os.File_Info) = nil)
         case:
             copy_inside = false
         }
-
-        //when ODIN_OS == .Windows {
-        //    target_path := filepath.join({pwd, filepath.base(fullpath)})
-        //}
-        //
-        //if copy_inside {
-        //    when ODIN_OS in UNIX_OS {
-        //        cmd = fmt.tprintf("cp -r %[0]s/* %[0]s/.* %[1]s", fullpath, pwd)
-        //    } else when ODIN_OS == .Windows {
-        //        cmd = fmt.tprintf("xcopy %s %s /s /e /y /q", fullpath, pwd)
-        //    }
-        //} else {
-        //    when ODIN_OS in UNIX_OS {
-        //        cmd = fmt.tprintf("cp -r %s %s", fullpath, pwd)
-        //    } else when ODIN_OS == .Windows {
-        //        cmd = fmt.tprint("xcopy %s %s /s /e /y /q /i", fullpath, target_path)
-        //    }
-        //}
     } else {
-        //when ODIN_OS in UNIX_OS {
-        //    cmd = fmt.tprintf("cp %s %s", fullpath, pwd)
-        //} else when ODIN_OS == .Windows {
-        //    cmd = fmt.tprint("copy /y %s %s", fullpath, pwd)
-        //}
+        copy_inside = true
     }
 
-    //result := sp.unwrap(sp.run_shell(cmd), "Failed to run copy command") or_return
-    //if !sp.result_success(result) {
-    //    fmt.eprintfln("Failed to copy `%s` into `%s`", fullpath, pwd)
-    //    return false
-    //}
+    out_path :=
+        pwd if copy_inside else path.join({pwd, path.base(fullpath)}, context.temp_allocator)
 
-    for x in paths_to_copy {
-        fmt.println(x)
+    if is_dir {
+        copy_dir_rec(fullpath, out_path) or_return
+    } else {
+        copy_file(fullpath, out_path) or_return
     }
 
     ansi_graphic(ansi.BOLD, ansi.FG_BLUE)
     fmt.printfln("Successfully copied `%s` into `%s`", fullpath, pwd)
     ansi_reset()
-    if copy_inside {
+    if is_dir && copy_inside {
         for x in dir_contents.? {
             rel_path, rel_path_err := path.rel(fullpath, x.fullpath, context.temp_allocator)
             if rel_path_err != nil {
@@ -201,7 +150,7 @@ copy_chosen :: proc(fullpath: string, dir_contents: Maybe([]os.File_Info) = nil)
                 )
                 return false
             }
-            fmt.printfln("Copied `%v%s`", rel_path, ("/" if is_dir else ""))
+            fmt.printfln("Copied `%v%s`", rel_path, ("/" if x.is_dir else ""))
         }
     }
 

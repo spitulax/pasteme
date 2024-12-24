@@ -70,42 +70,6 @@ list_git :: proc(
     return files, true
 }
 
-list_git_paths_rec :: proc(
-    dirpath: string,
-    alloc := context.allocator,
-) -> (
-    paths: []string,
-    ok: bool,
-) {
-    process :: proc(
-        buf: ^[dynamic]string,
-        dirpath: string,
-        alloc := context.allocator,
-    ) -> (
-        ok: bool,
-    ) {
-        files := list_git(dirpath) or_return
-        defer os.file_info_slice_delete(files)
-        for x in files {
-            if x.is_dir {
-                process(buf, x.fullpath, alloc) or_return
-            } else {
-                append(buf, strings.clone(x.fullpath, alloc))
-            }
-        }
-        return true
-    }
-
-    paths_buf := make([dynamic]string, alloc)
-    defer if !ok {
-        delete(paths_buf)
-    }
-
-    process(&paths_buf, dirpath, alloc) or_return
-
-    return paths_buf[:], true
-}
-
 list_dir :: proc(
     dirpath: string,
     hidden: bool = false,
@@ -148,44 +112,6 @@ list_dir :: proc(
     })
 
     return files_buf[:], true
-}
-
-list_dir_paths_rec :: proc(
-    dirpath: string,
-    hidden: bool = false,
-    alloc := context.allocator,
-) -> (
-    paths: []string,
-    ok: bool,
-) {
-    process :: proc(
-        buf: ^[dynamic]string,
-        dirpath: string,
-        hidden: bool = false,
-        alloc := context.allocator,
-    ) -> (
-        ok: bool,
-    ) {
-        files := list_dir(dirpath, hidden) or_return
-        defer os.file_info_slice_delete(files)
-        for x in files {
-            if x.is_dir {
-                process(buf, x.fullpath, hidden, alloc) or_return
-            } else {
-                append(buf, strings.clone(x.fullpath, alloc))
-            }
-        }
-        return true
-    }
-
-    paths_buf := make([dynamic]string, alloc)
-    defer if !ok {
-        delete(paths_buf)
-    }
-
-    process(&paths_buf, dirpath, hidden, alloc) or_return
-
-    return paths_buf[:], true
 }
 
 // Allocates if `return_contents`
@@ -239,5 +165,53 @@ list_dirs :: proc(
 
     ok = true
     return
+}
+
+// If `g_userdata_is_git`, `hidden` doesn't matter
+copy_dir_rec :: proc(dirpath: string, target_path: string, hidden: bool = true) -> (ok: bool) {
+    runtime.DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD()
+
+    mkdir_if_not_exist(target_path) or_return
+
+    process :: proc(
+        paths: []string,
+        dirpath: string,
+        target_path: string,
+        hidden: bool,
+    ) -> (
+        ok: bool,
+    ) {
+        runtime.DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD()
+
+        files: []os.File_Info
+        if g_userdata_is_git {
+            files = list_git(dirpath) or_return
+        } else {
+            files = list_dir(dirpath, hidden) or_return
+        }
+        defer os.file_info_slice_delete(files)
+        for x in files {
+            if x.is_dir {
+                next_paths := make([]string, len(paths) + 1)
+                defer delete(next_paths)
+                copy(next_paths, paths)
+                next_paths[len(next_paths) - 1] = path.base(x.fullpath)
+                process(next_paths, x.fullpath, target_path, hidden) or_return
+            } else {
+                copy_file(
+                    x.fullpath,
+                    path.join(
+                        {target_path, path.join(paths, context.temp_allocator)},
+                        context.temp_allocator,
+                    ),
+                )
+            }
+        }
+        return true
+    }
+
+    process({}, dirpath, target_path, hidden) or_return
+
+    return true
 }
 
