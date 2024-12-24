@@ -5,7 +5,7 @@
   ],
   "thread_pool_count": 2,
   "enable_semantic_tokens": true,
-  "enable_document_symbols": false,
+  "enable_document_symbols": true,
   "enable_format": true,
   "enable_hover": true,
   "enable_procedure_context": true,
@@ -14,13 +14,16 @@
   "enable_references": true,
   "enable_fake_methods": true,
   "enable_procedure_snippet": true,
-  "enable_checker_only_saved": false,
+  "enable_checker_only_saved": true,
   "disable_parser_errors": false,
   "verbose": true,
   "checker_args": "-vet -disallow-do -warnings-as-errors",
 
   "profile": "default",
   "profiles": [
-    { "name": "default", "os": "linux", "checker_path": [ "src" ] }
+    { "name": "default", "checker_path": ["src"] },
+    { "name": "linux", "os": "linux", "checker_path": ["src"] },
+    { "name": "windows", "os": "windows", "checker_path": ["src"] },
+    { "name": "darwin", "os": "darwin", "checker_path": ["src"] }
   ]
 }

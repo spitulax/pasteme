@@ -2,7 +2,7 @@ PREFIX ?= $(HOME)/.local
 BIN_DIR := $(PREFIX)/bin
 
 PROG_NAME := pasteme
-PROG_VERSION := 0.1.0
+PROG_VERSION := $(shell cat ./VERSION | tr -d '[:space:]')
 
 SRC_DIR := ./src
 BUILD_DIR := ./build

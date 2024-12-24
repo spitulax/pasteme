@@ -1,6 +1,6 @@
 { self, lib, inputs }: {
-  default = final: prev: rec {
+  default = final: prev: {
     pasteme = final.callPackage ./default.nix { };
-    pasteme-debug = pasteme.override { debug = true; };
+    pasteme-debug = final.callPackage ./default.nix { debug = true; };
   };
 }
