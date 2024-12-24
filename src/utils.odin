@@ -1,12 +1,21 @@
 package pasteme
 
+import "base:runtime"
 import "core:encoding/ansi"
 import "core:fmt"
 import "core:math"
 import "core:os"
 import "core:strings"
 
-todo :: proc "contextless" (loc := #caller_location) {
+
+when ODIN_OS == .Windows {
+    NL :: "\r\n"
+} else {
+    NL :: "\n"
+}
+
+
+todo :: proc "contextless" (loc := #caller_location) -> ! {
     panic_contextless("Unimplemented", loc)
 }
 
@@ -15,6 +24,7 @@ ansi_reset :: proc() {
 }
 
 ansi_graphic :: proc(options: ..string) {
+    runtime.DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD()
     fmt.print(
         ansi.CSI,
         concat_string_sep(options, ";", context.temp_allocator),
@@ -36,15 +46,14 @@ scan :: proc(alloc := context.allocator) -> (input: string, ok: bool) {
 
 concat_string_sep :: proc(strs: []string, sep: string, alloc := context.allocator) -> string {
     sb: strings.Builder
-    strings.builder_init(&sb)
-    defer strings.builder_destroy(&sb)
+    strings.builder_init(&sb, alloc)
     for str, i in strs {
         if i > 0 {
             fmt.sbprint(&sb, sep)
         }
         fmt.sbprint(&sb, str)
     }
-    return strings.clone(strings.to_string(sb), alloc)
+    return strings.to_string(sb)
 }
 
 // metric = multiple of 1000 instead of 1024
@@ -78,61 +87,7 @@ human_readable_size :: proc(
     )
 }
 
-
-// allocates if `return_contents`
-list_dir :: proc(
-    files: []os.File_Info,
-    return_contents: bool = false,
-    alloc := context.allocator,
-) -> (
-    dirs_contents: Maybe([][]os.File_Info),
-    ok: bool,
-) {
-    if return_contents {
-        dirs_contents = make([][]os.File_Info, len(files), alloc)
-    }
-
-    for x, i in files {
-        if x.name == "" {continue}
-
-        ansi_graphic(ansi.FG_GREEN)
-        fmt.printf("%d)", i + 1)
-        ansi_reset()
-        if x.is_dir {
-            ansi_graphic(ansi.BOLD, ansi.FG_BLUE)
-        }
-        fmt.printf(" %s", x.fullpath)
-        if x.is_dir {
-            dir, dir_err := os.open(x.fullpath)
-            if dir_err != nil {
-                fmt.eprintfln("Failed to open `%s`: %v", x.fullpath, dir_err)
-                ok = false
-                return
-            }
-            defer assert(os.close(dir) == nil)
-
-            contents, contents_err := os.read_dir(dir, 0, alloc)
-            if contents_err != nil {
-                fmt.eprintfln("Failed to read `%s`: %v", x.fullpath, contents_err)
-                ok = false
-                return
-            }
-            defer if !return_contents {
-                delete_file_infos(contents, alloc)
-            }
-            if return_contents {
-                dirs_contents.?[i] = contents
-            }
-
-            fmt.printf(" [%v]", len(contents))
-        } else {
-            fmt.printf(" [%v]", human_readable_size(x.size, alloc = context.temp_allocator))
-        }
-        fmt.print("\n")
-        ansi_reset()
-    }
-
-    ok = true
-    return
+trim_nl :: proc(s: string) -> string {
+    return strings.trim_suffix(s, NL)
 }
 

@@ -5,9 +5,11 @@ PROG_NAME := pasteme
 PROG_VERSION := $(shell cat ./VERSION | tr -d '[:space:]')
 
 SRC_DIR := ./src
+DEPS_DIR := ./deps
 BUILD_DIR := ./build
 
 ARGS += -collection:src=$(SRC_DIR)
+ARGS += -collection:deps=$(DEPS_DIR)
 ARGS += -out:$(BUILD_DIR)/$(PROG_NAME)
 ARGS += -build-mode:exe
 ARGS += -vet

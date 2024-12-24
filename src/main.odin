@@ -1,6 +1,7 @@
 package pasteme
 
 // TODO: Search UI like fzf
+// TODO: Handle ^C and ^D
 
 import "base:runtime"
 import "core:c/libc"
@@ -10,96 +11,77 @@ import "core:mem"
 import "core:os"
 import "core:path/filepath"
 import "core:strconv"
-import "core:strings"
 _ :: mem
+
 
 PROG_NAME :: #config(PROG_NAME, "")
 PROG_VERSION :: #config(PROG_VERSION, "")
 
+
 OS_Set :: bit_set[runtime.Odin_OS_Type]
 UNIX_OS :: OS_Set{.Linux, .Darwin, .FreeBSD, .OpenBSD}
 
+
 start :: proc() -> (ok: bool) {
-    userdata_dirname: string
-    defer delete(userdata_dirname)
+    userdata_path: string
+    defer delete(userdata_path)
     when ODIN_OS in UNIX_OS {
         config_home := os.get_env("XDG_CONFIG_HOME", context.temp_allocator)
         if config_home == "" {
             home := os.get_env("HOME", context.temp_allocator)
-            assert(home != "")
+            assert(home != "", "$HOME is not defined")
             config_home = filepath.join({home, ".config"})
         }
-        userdata_dirname = filepath.join({config_home, "pasteme"})
+        userdata_path = filepath.join({config_home, "pasteme"})
     } else when ODIN_OS == .Windows {
         appdata := os.get_env("APPDATA", context.temp_allocator)
-        assert(appdata != "")
-        userdata_dirname = filepath.join({appdata, "pasteme"})
+        assert(appdata != "", "%APPDATA% is not defined")
+        userdata_path = filepath.join({appdata, "pasteme"})
     } else {
         #panic("Unsupported operating system: " + ODIN_OS)
     }
 
-    if !os.exists(userdata_dirname) {
-        if err := os.make_directory(userdata_dirname); err != nil {
-            fmt.eprintfln("Unable to create directory in `%s`: %v", userdata_dirname, err)
+    if !os.exists(userdata_path) {
+        if err := os.make_directory(userdata_path); err != nil {
+            fmt.eprintfln("Unable to create directory in `%s`: %v", userdata_path, err)
             return false
         }
     } else {
-        if !os.is_dir(userdata_dirname) {
-            fmt.eprintfln("`%s` already exists but it's not a directory", userdata_dirname)
+        if !os.is_dir(userdata_path) {
+            fmt.eprintfln("`%s` already exists but it's not a directory", userdata_path)
             return false
         }
     }
 
-    files := read_userdata_dir(userdata_dirname) or_return
-    defer delete_file_infos(files)
-    dirs_contents := list_dir(files, true) or_return
-    defer {
-        for x in dirs_contents.? {
-            delete_file_infos(x)
-        }
-        delete(dirs_contents.?)
-    }
+    files := read_userdata_dir(userdata_path) or_return
+    defer os.file_info_slice_delete(files)
+    dirs_contents := list_dirs(files, true) or_return
+    defer file_info_delete_slices_many(dirs_contents.?)
     copy_chosen(ask(files, dirs_contents.?) or_return) or_return
 
     return true
 }
 
-read_userdata_dir :: proc(userdata_dirname: string) -> (files: []os.File_Info, ok: bool) {
-    userdata_dir, userdata_dir_err := os.open(userdata_dirname)
-    if userdata_dir_err != nil {
-        fmt.eprintfln("Failed to open `%s`: %v", userdata_dirname, userdata_dir_err)
-        ok = false
-        return
-    }
-    defer assert(os.close(userdata_dir) == nil)
+read_userdata_dir :: proc(
+    userdata_path: string,
+    alloc := context.allocator,
+) -> (
+    files: []os.File_Info,
+    ok: bool,
+) {
+    runtime.DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD(alloc == context.temp_allocator)
 
-    files_err: os.Error
-    files, files_err = os.read_dir(userdata_dir, 0)
-    if files_err != nil {
-        fmt.eprintfln("Failed to read `%s`: %v", userdata_dirname, files_err)
-        ok = false
-        return
+    if os.exists(".git") {
+        files = list_git(userdata_path, alloc) or_return
+    } else {
+        files = list_dir(userdata_path, false, alloc) or_return
     }
     defer if !ok {
-        delete_file_infos(files)
-    }
-
-    for &file in files {
-        if strings.has_prefix(file.name, ".") {
-            delete(file.fullpath)
-            file = {}
-        }
+        os.file_info_slice_delete(files)
     }
 
     ok = true
     return
-}
-
-delete_file_infos :: proc(files: []os.File_Info, alloc := context.allocator) {
-    for x in files {
-        delete(x.fullpath, alloc)
-    }
-    delete(files, alloc)
 }
 
 ask :: proc(
@@ -134,7 +116,7 @@ ask :: proc(
         ansi_graphic(ansi.BOLD, ansi.FG_CYAN)
         fmt.println("Directory contents: ")
         ansi_reset()
-        list_dir(dir_contents.?) or_return
+        list_dirs(dir_contents.?) or_return
     }
 
     fullpath = chosen_file.fullpath
@@ -149,8 +131,8 @@ copy_chosen :: proc(
 ) -> (
     ok: bool,
 ) {
-    pwd := os.get_current_directory()
-    defer delete(pwd)
+    runtime.DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD()
+    pwd := os.get_current_directory(context.temp_allocator)
 
     cmd: cstring
     copy_inside: bool

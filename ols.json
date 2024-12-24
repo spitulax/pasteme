@@ -1,7 +1,8 @@
 {
   "$schema": "https://raw.githubusercontent.com/DanielGavin/ols/master/misc/ols.schema.json",
   "collections": [
-    { "name": "src", "path": "src" }
+    { "name": "src", "path": "src" },
+    { "name": "deps", "path": "deps" }
   ],
   "thread_pool_count": 2,
   "enable_semantic_tokens": true,
