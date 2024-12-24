@@ -1,6 +1,9 @@
 <h1 align="center">Pasteme</h1>
 <p align="center">A very simple program to quickly copy frequently used file or project template to the current directory.</p>
 
+> [!WARNING]
+> 🚧 This program is still in development 🚧
+
 ## Quick Start
 
 - Build the executable
