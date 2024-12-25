@@ -77,20 +77,30 @@ list_git :: proc(
     }
 
     file_names := strings.split_lines(trim_nl(string(result.stdout)), context.temp_allocator)
-    files = make([]os.File_Info, len(file_names), alloc)
+    files_buf := make([dynamic]os.File_Info, 0, len(file_names), alloc)
     defer if !ok {
         os.file_info_slice_delete(files, alloc)
     }
-    for x, i in file_names {
+    for x in file_names {
         if x == ".gitignore" {
             continue
         }
-        files[i] = stat(x, false, alloc) or_return
+        append(&files_buf, stat(x, false, alloc) or_return)
     }
 
     chdir(old_dir) or_return
 
-    return files, true
+    slice.sort_by(files_buf[:], proc(i, j: os.File_Info) -> bool {
+        if i.is_dir && !j.is_dir {
+            return false
+        } else if !i.is_dir && j.is_dir {
+            return true
+        } else {
+            return i.name < j.name
+        }
+    })
+
+    return files_buf[:], true
 }
 
 @(require_results)
