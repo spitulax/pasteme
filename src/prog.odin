@@ -53,7 +53,12 @@ prog_init :: proc(alloc := context.allocator) -> (ok: bool) {
             #panic("Unsupported operating system: " + ODIN_OS)
         }
     } else {
-        g_prog.vault_path = strings.clone(g_prog.vault_path, alloc)
+        abs_ok: bool
+        g_prog.vault_path, abs_ok = fp.abs(g_prog.vault_path, alloc)
+        if !abs_ok {
+            eprint("Failed to get absolute path to `%s`", g_prog.vault_path)
+            return
+        }
     }
     defer if !ok {
         delete(g_prog.vault_path, alloc)
@@ -76,6 +81,8 @@ prog_destroy :: proc(alloc := context.allocator) {
 @(require_results)
 read_vault :: proc(alloc := context.allocator) -> (files: []os.File_Info, ok: bool) {
     runtime.DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD(alloc == context.temp_allocator)
+
+    fmt.println("Reading", g_prog.vault_path)
 
     if g_prog.vault_is_git {
         files = list_git(g_prog.vault_path, alloc) or_return
