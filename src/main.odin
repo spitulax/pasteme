@@ -1,14 +1,13 @@
 package pasteme
 
 // TODO: Search UI like fzf
-// TODO: Handle ^C and ^D
 // TODO: Custom userdata path
+// TODO: Copy into temp dir first
 
 import "base:runtime"
 import "core:fmt"
 import "core:mem"
 import "core:os"
-import sp "deps:subprocess.odin"
 _ :: mem
 _ :: fmt
 
@@ -21,32 +20,86 @@ OS_Set :: bit_set[runtime.Odin_OS_Type]
 UNIX_OS :: OS_Set{.Linux, .Darwin, .FreeBSD, .OpenBSD, .NetBSD}
 
 
-g_userdata_path: string
-g_userdata_is_git: bool
-g_git: sp.Command
+g_prog: Prog
 
 
 start :: proc() -> (ok: bool) {
-    git_err: sp.Error
-    g_git, git_err = sp.command_make("git")
-    if git_err == sp.General_Error.Program_Not_Found {
-        fmt.eprintfln("`git` is not found. Some features will be unavailabe")
-    } else if git_err != nil {
-        sp.unwrap(git_err) or_return
+    if terminate, args_ok := parse_args(); !args_ok {
+        usage()
+        return
+    } else if terminate {
+        return true
     }
-    g_git.opts.output = .Capture
-    defer sp.command_destroy(&g_git)
 
-    setup_userdata() or_return
-    defer delete(g_userdata_path)
+    prog_init()
+    defer prog_destroy()
 
-    files := read_userdata_dir() or_return
+    files := read_vault() or_return
     defer os.file_info_slice_delete(files)
     dirs_contents := list_dirs(files, true) or_return
     defer file_info_delete_slices_many(dirs_contents.?)
     copy_chosen(ask(files, dirs_contents.?) or_return) or_return
 
     return true
+}
+
+parse_args :: proc() -> (terminate: bool, ok: bool) {
+    next_args :: proc(args: ^[]string) -> (arg: string, ok: bool) {
+        if len(args) <= 0 {
+            ok = false
+            return
+        }
+        arg = args[0]
+        args^ = args[1:]
+        ok = true
+        return
+    }
+
+    args := os.args
+    _ = next_args(&args) or_return
+
+    for i := 0; len(args) > 0; i += 1 {
+        arg := next_args(&args) or_return
+
+        if i == 0 {
+            switch arg {
+            case "--help":
+                usage()
+                terminate = true
+                ok = true
+                return
+            case "--version":
+                fmt.printfln("%s version %s", PROG_NAME, PROG_VERSION)
+                terminate = true
+                ok = true
+                return
+            }
+        }
+
+        switch arg {
+        case "--no-git":
+            g_prog.no_git = true
+        case "--vault":
+            path := next_args(&args) or_return
+            g_prog.vault_path = path
+        }
+    }
+
+    ok = true
+    return
+}
+
+usage :: proc() {
+    fmt.printf(
+        `Usage:
+%s [options...]
+
+Options:
+    --no-git            Ignore Git.
+    --vault <PATH>      Custom vault.
+`,
+        PROG_NAME,
+    )
 }
 
 main :: proc() {

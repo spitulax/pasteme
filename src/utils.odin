@@ -89,17 +89,17 @@ trim_nl :: proc(s: string) -> string {
 }
 
 is_git_dir :: proc(dirpath: string) -> (git: bool, ok: bool) {
-    if !g_git.prog.found {
+    if !g_prog.git.prog.found {
         return false, true
     }
 
     old_dir := os.get_current_directory(context.temp_allocator)
     chdir(dirpath) or_return
 
-    sp.command_clear(&g_git)
-    sp.command_append(&g_git, "rev-parse")
+    sp.command_clear(&g_prog.git)
+    sp.command_append(&g_prog.git, "rev-parse")
     result := sp.unwrap(
-        sp.command_run(g_git, sp.Exec_Opts{output = .Silent}),
+        sp.command_run(g_prog.git, sp.Exec_Opts{output = .Silent}),
         "Could not run `git rev-parse`",
     ) or_return
     defer sp.result_destroy(&result)

@@ -20,11 +20,14 @@ list_git :: proc(
     runtime.DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD(alloc == context.temp_allocator)
 
     old_dir := os.get_current_directory(context.temp_allocator)
-    chdir(g_userdata_path) or_return
+    chdir(g_prog.vault_path) or_return
 
-    sp.command_clear(&g_git)
-    sp.command_append(&g_git, "write-tree", "--missing-ok")
-    write_tree_res := sp.unwrap(sp.command_run(g_git), "Could not run `git write-tree`") or_return
+    sp.command_clear(&g_prog.git)
+    sp.command_append(&g_prog.git, "write-tree", "--missing-ok")
+    write_tree_res := sp.unwrap(
+        sp.command_run(g_prog.git),
+        "Could not run `git write-tree`",
+    ) or_return
     defer sp.result_destroy(&write_tree_res)
     if !sp.result_success(write_tree_res) {
         fmt.eprintln("`git write-tree` exited with:", write_tree_res.exit)
@@ -32,16 +35,16 @@ list_git :: proc(
     }
     write_tree := trim_nl(string(write_tree_res.stdout))
 
-    sp.command_clear(&g_git)
+    sp.command_clear(&g_prog.git)
     sp.command_append(
-        &g_git,
+        &g_prog.git,
         "ls-tree",
         "--name-only",
         "--full-tree",
         write_tree,
         fmt.tprintf("%s%s", dirpath, path.SEPARATOR_STRING),
     )
-    result := sp.unwrap(sp.command_run(g_git), "Could not run `git ls-tree`") or_return
+    result := sp.unwrap(sp.command_run(g_prog.git), "Could not run `git ls-tree`") or_return
     defer sp.result_destroy(&result)
     if !sp.result_success(result) {
         fmt.eprintln("`git ls-tree` exited with:", result.exit)
@@ -143,7 +146,7 @@ list_dirs :: proc(
         fmt.printf(" %s", x.fullpath)
         if x.is_dir {
             contents: []os.File_Info
-            if g_userdata_is_git {
+            if g_prog.vault_is_git {
                 contents = list_git(x.fullpath, alloc) or_return
             } else {
                 contents = list_dir(x.fullpath, true, alloc) or_return
@@ -184,7 +187,7 @@ copy_dir_rec :: proc(dirpath: string, target_path: string, hidden: bool = true) 
         runtime.DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD()
 
         files: []os.File_Info
-        if g_userdata_is_git {
+        if g_prog.vault_is_git {
             files = list_git(dirpath) or_return
         } else {
             files = list_dir(dirpath, hidden) or_return

@@ -15,7 +15,7 @@
   "enable_references": true,
   "enable_fake_methods": true,
   "enable_procedure_snippet": true,
-  "enable_checker_only_saved": true,
+  "enable_checker_only_saved": false,
   "disable_parser_errors": false,
   "verbose": true,
   "checker_args": "-vet -disallow-do -warnings-as-errors",

@@ -7,42 +7,77 @@ import "core:os"
 import path "core:path/filepath"
 import "core:strconv"
 import "core:strings"
+import sp "deps:subprocess.odin"
 
 
-setup_userdata :: proc(alloc := context.allocator) -> (ok: bool) {
-    when ODIN_OS in UNIX_OS {
-        config_home := os.get_env("XDG_CONFIG_HOME", context.temp_allocator)
-        if config_home == "" {
-            home := os.get_env("HOME", context.temp_allocator)
-            assert(home != "", "$HOME is not defined")
-            config_home = path.join({home, ".config"}, context.temp_allocator)
-        }
-        g_userdata_path = path.join({config_home, "pasteme"}, alloc)
-    } else when ODIN_OS == .Windows {
-        appdata := os.get_env("APPDATA", context.temp_allocator)
-        assert(appdata != "", "%APPDATA% is not defined")
-        g_userdata_path = path.join({appdata, "pasteme"}, alloc)
-    } else {
-        #panic("Unsupported operating system: " + ODIN_OS)
+Prog :: struct {
+    git:          sp.Command,
+    //
+    vault_path:   string,
+    vault_is_git: bool,
+    //
+    no_git:       bool,
+}
+
+prog_init :: proc(alloc := context.allocator) -> (ok: bool) {
+    runtime.DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD(alloc == context.temp_allocator)
+
+    git_err: sp.Error
+    g_prog.git, git_err = sp.command_make("git", alloc = alloc)
+    if git_err == sp.General_Error.Program_Not_Found {
+        fmt.eprintfln("`git` is not found. Some features will be unavailabe")
+    } else if git_err != nil {
+        sp.unwrap(git_err) or_return
     }
     defer if !ok {
-        delete(g_userdata_path)
+        sp.command_destroy(&g_prog.git)
+    }
+    g_prog.git.opts.output = .Capture
+
+    if g_prog.vault_path == "" {
+        when ODIN_OS in UNIX_OS {
+            config_home := os.get_env("XDG_CONFIG_HOME", context.temp_allocator)
+            if config_home == "" {
+                home := os.get_env("HOME", context.temp_allocator)
+                assert(home != "", "$HOME is not defined")
+                config_home = path.join({home, ".config"}, context.temp_allocator)
+            }
+            g_prog.vault_path = path.join({config_home, "pasteme"}, alloc)
+        } else when ODIN_OS == .Windows {
+            appdata := os.get_env("APPDATA", context.temp_allocator)
+            assert(appdata != "", "%APPDATA% is not defined")
+            g_prog.vault_path = path.join({appdata, "pasteme"}, alloc)
+        } else {
+            #panic("Unsupported operating system: " + ODIN_OS)
+        }
+    } else {
+        g_prog.vault_path = strings.clone(g_prog.vault_path, alloc)
+    }
+    defer if !ok {
+        delete(g_prog.vault_path, alloc)
     }
 
-    mkdir_if_not_exist(g_userdata_path) or_return
+    mkdir_if_not_exist(g_prog.vault_path) or_return
 
-    g_userdata_is_git = is_git_dir(g_userdata_path) or_return
+    g_prog.vault_is_git = !g_prog.no_git && (is_git_dir(g_prog.vault_path) or_return)
 
     return true
 }
 
-read_userdata_dir :: proc(alloc := context.allocator) -> (files: []os.File_Info, ok: bool) {
+prog_destroy :: proc(alloc := context.allocator) {
+    sp.command_destroy(&g_prog.git)
+    delete(g_prog.vault_path, alloc)
+    g_prog = {}
+}
+
+
+read_vault :: proc(alloc := context.allocator) -> (files: []os.File_Info, ok: bool) {
     runtime.DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD(alloc == context.temp_allocator)
 
-    if g_userdata_is_git {
-        files = list_git(g_userdata_path, alloc) or_return
+    if g_prog.vault_is_git {
+        files = list_git(g_prog.vault_path, alloc) or_return
     } else {
-        files = list_dir(g_userdata_path, false, alloc) or_return
+        files = list_dir(g_prog.vault_path, false, alloc) or_return
     }
     defer if !ok {
         os.file_info_slice_delete(files)
