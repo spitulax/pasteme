@@ -31,7 +31,7 @@ start :: proc() -> (ok: bool) {
         return true
     }
 
-    prog_init()
+    prog_init() or_return
     defer prog_destroy()
 
     files := read_vault() or_return
@@ -82,6 +82,8 @@ parse_args :: proc() -> (terminate: bool, ok: bool) {
         case "--vault":
             path := next_args(&args) or_return
             g_prog.vault_path = path
+        case "--verbose":
+            g_prog.verbose = true
         }
     }
 

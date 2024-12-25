@@ -4,7 +4,7 @@ import "base:runtime"
 import "core:encoding/ansi"
 import "core:fmt"
 import "core:os"
-import path "core:path/filepath"
+import fp "core:path/filepath"
 import "core:strconv"
 import "core:strings"
 import sp "deps:subprocess.odin"
@@ -17,15 +17,17 @@ Prog :: struct {
     vault_is_git: bool,
     //
     no_git:       bool,
+    verbose:      bool,
 }
 
+@(require_results)
 prog_init :: proc(alloc := context.allocator) -> (ok: bool) {
     runtime.DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD(alloc == context.temp_allocator)
 
     git_err: sp.Error
     g_prog.git, git_err = sp.command_make("git", alloc = alloc)
     if git_err == sp.General_Error.Program_Not_Found {
-        fmt.eprintfln("`git` is not found. Some features will be unavailabe")
+        eprintf("`git` is not found. Some features will be unavailabe")
     } else if git_err != nil {
         sp.unwrap(git_err) or_return
     }
@@ -40,13 +42,13 @@ prog_init :: proc(alloc := context.allocator) -> (ok: bool) {
             if config_home == "" {
                 home := os.get_env("HOME", context.temp_allocator)
                 assert(home != "", "$HOME is not defined")
-                config_home = path.join({home, ".config"}, context.temp_allocator)
+                config_home = fp.join({home, ".config"}, context.temp_allocator)
             }
-            g_prog.vault_path = path.join({config_home, "pasteme"}, alloc)
+            g_prog.vault_path = fp.join({config_home, "pasteme"}, alloc)
         } else when ODIN_OS == .Windows {
             appdata := os.get_env("APPDATA", context.temp_allocator)
             assert(appdata != "", "%APPDATA% is not defined")
-            g_prog.vault_path = path.join({appdata, "pasteme"}, alloc)
+            g_prog.vault_path = fp.join({appdata, "pasteme"}, alloc)
         } else {
             #panic("Unsupported operating system: " + ODIN_OS)
         }
@@ -71,6 +73,7 @@ prog_destroy :: proc(alloc := context.allocator) {
 }
 
 
+@(require_results)
 read_vault :: proc(alloc := context.allocator) -> (files: []os.File_Info, ok: bool) {
     runtime.DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD(alloc == context.temp_allocator)
 
@@ -87,6 +90,7 @@ read_vault :: proc(alloc := context.allocator) -> (files: []os.File_Info, ok: bo
     return
 }
 
+@(require_results)
 ask :: proc(
     files: []os.File_Info,
     dirs_contents: [][]os.File_Info,
@@ -131,6 +135,7 @@ ask :: proc(
     return
 }
 
+@(require_results)
 copy_chosen :: proc(fullpath: string, dir_contents: Maybe([]os.File_Info) = nil) -> (ok: bool) {
     runtime.DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD()
 
@@ -142,7 +147,7 @@ copy_chosen :: proc(fullpath: string, dir_contents: Maybe([]os.File_Info) = nil)
         ansi_graphic(ansi.BOLD, ansi.FG_CYAN)
         fmt.println("Directory contents: ")
         ansi_reset()
-        list_dirs(dir_contents.?) or_return
+        _ = list_dirs(dir_contents.?) or_return
 
         ansi_graphic(ansi.BOLD, ansi.FG_RED)
         fmt.printf(
@@ -162,8 +167,7 @@ copy_chosen :: proc(fullpath: string, dir_contents: Maybe([]os.File_Info) = nil)
         copy_inside = true
     }
 
-    out_path :=
-        pwd if copy_inside else path.join({pwd, path.base(fullpath)}, context.temp_allocator)
+    out_path := pwd if copy_inside else fp.join({pwd, fp.base(fullpath)}, context.temp_allocator)
 
     if is_dir {
         copy_dir_rec(fullpath, out_path) or_return
@@ -176,13 +180,9 @@ copy_chosen :: proc(fullpath: string, dir_contents: Maybe([]os.File_Info) = nil)
     ansi_reset()
     if is_dir && copy_inside {
         for x in dir_contents.? {
-            rel_path, rel_path_err := path.rel(fullpath, x.fullpath, context.temp_allocator)
+            rel_path, rel_path_err := fp.rel(fullpath, x.fullpath, context.temp_allocator)
             if rel_path_err != nil {
-                fmt.eprintfln(
-                    "Failed to compute relative path of `%s` from `%s`",
-                    x.fullpath,
-                    fullpath,
-                )
+                eprintf("Failed to compute relative path of `%s` from `%s`", x.fullpath, fullpath)
                 return false
             }
             fmt.printfln("Copied `%v%s`", rel_path, ("/" if x.is_dir else ""))

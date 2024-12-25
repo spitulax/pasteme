@@ -4,12 +4,37 @@ import "base:runtime"
 import "core:encoding/ansi"
 import "core:fmt"
 import "core:os"
-import path "core:path/filepath"
+import fp "core:path/filepath"
 import "core:slice"
 import "core:strings"
 import sp "deps:subprocess.odin"
 
 
+@(require_results)
+is_git_dir :: proc(dirpath: string) -> (git: bool, ok: bool) {
+    if !g_prog.git.prog.found {
+        return false, true
+    }
+
+    old_dir := os.get_current_directory(context.temp_allocator)
+    chdir(dirpath) or_return
+
+    sp.command_clear(&g_prog.git)
+    sp.command_append(&g_prog.git, "rev-parse")
+    result := sp.unwrap(
+        sp.command_run(g_prog.git, sp.Exec_Opts{output = .Silent}),
+        "Could not run `git rev-parse`",
+    ) or_return
+    defer sp.result_destroy(&result)
+
+    chdir(old_dir) or_return
+
+    git = sp.result_success(result)
+    ok = true
+    return
+}
+
+@(require_results)
 list_git :: proc(
     dirpath: string,
     alloc := context.allocator,
@@ -30,7 +55,7 @@ list_git :: proc(
     ) or_return
     defer sp.result_destroy(&write_tree_res)
     if !sp.result_success(write_tree_res) {
-        fmt.eprintln("`git write-tree` exited with:", write_tree_res.exit)
+        eprint("`git write-tree` exited with:", write_tree_res.exit)
         return
     }
     write_tree := trim_nl(string(write_tree_res.stdout))
@@ -42,12 +67,12 @@ list_git :: proc(
         "--name-only",
         "--full-tree",
         write_tree,
-        fmt.tprintf("%s%s", dirpath, path.SEPARATOR_STRING),
+        fmt.tprintf("%s%s", dirpath, fp.SEPARATOR_STRING),
     )
     result := sp.unwrap(sp.command_run(g_prog.git), "Could not run `git ls-tree`") or_return
     defer sp.result_destroy(&result)
     if !sp.result_success(result) {
-        fmt.eprintln("`git ls-tree` exited with:", result.exit)
+        eprint("`git ls-tree` exited with:", result.exit)
         return
     }
 
@@ -60,12 +85,7 @@ list_git :: proc(
         if x == ".gitignore" {
             continue
         }
-        err: os.Error
-        files[i], err = os.stat(x, alloc)
-        if err != nil {
-            fmt.eprintfln("Failed to stat `%s`: %v", x, err)
-            return
-        }
+        files[i] = stat(x, false, alloc) or_return
     }
 
     chdir(old_dir) or_return
@@ -73,6 +93,7 @@ list_git :: proc(
     return files, true
 }
 
+@(require_results)
 list_dir :: proc(
     dirpath: string,
     hidden: bool = false,
@@ -88,7 +109,7 @@ list_dir :: proc(
 
     files_all, files_err := os.read_dir(dir, 0, alloc)
     if files_err != nil {
-        fmt.eprintfln("Failed to read `%s`: %v", dirpath, files_err)
+        eprintf("Failed to read `%s`: %v", dirpath, files_err)
         return
     }
     defer os.file_info_slice_delete(files_all, alloc)
@@ -119,6 +140,7 @@ list_dir :: proc(
 
 // Allocates if `return_contents`
 // The job of reading each directory is handled here to prevent reading directories twice
+@(require_results)
 list_dirs :: proc(
     files: []os.File_Info,
     return_contents: bool = false,
@@ -171,6 +193,7 @@ list_dirs :: proc(
 }
 
 // If `g_userdata_is_git`, `hidden` doesn't matter
+@(require_results)
 copy_dir_rec :: proc(dirpath: string, target_path: string, hidden: bool = true) -> (ok: bool) {
     runtime.DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD()
 
@@ -198,16 +221,16 @@ copy_dir_rec :: proc(dirpath: string, target_path: string, hidden: bool = true) 
                 next_paths := make([]string, len(paths) + 1)
                 defer delete(next_paths)
                 copy(next_paths, paths)
-                next_paths[len(next_paths) - 1] = path.base(x.fullpath)
+                next_paths[len(next_paths) - 1] = fp.base(x.fullpath)
                 process(next_paths, x.fullpath, target_path, hidden) or_return
             } else {
                 copy_file(
                     x.fullpath,
-                    path.join(
-                        {target_path, path.join(paths, context.temp_allocator)},
+                    fp.join(
+                        {target_path, fp.join(paths, context.temp_allocator)},
                         context.temp_allocator,
                     ),
-                )
+                ) or_return
             }
         }
         return true

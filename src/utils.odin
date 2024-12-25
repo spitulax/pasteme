@@ -6,7 +6,6 @@ import "core:fmt"
 import "core:math"
 import "core:os"
 import "core:strings"
-import sp "deps:subprocess.odin"
 
 
 when ODIN_OS == .Windows {
@@ -30,17 +29,19 @@ ansi_graphic :: proc(options: ..string) {
     )
 }
 
-scan :: proc(alloc := context.allocator) -> (input: string, ok: bool) {
+@(require_results)
+scan :: proc(alloc := context.allocator, loc := #caller_location) -> (input: string, ok: bool) {
     buf: [1024]byte
     read_n, read_err := os.read(os.stdin, buf[:])
     if read_err != nil {
-        fmt.eprintfln("Failed to read user input: %v", read_err)
+        eprintf("Failed to read user input: %v", read_err, loc = loc)
         ok = false
         return
     }
     return strings.clone(string(buf[:read_n]), alloc), true
 }
 
+@(require_results)
 concat_string_sep :: proc(strs: []string, sep: string, alloc := context.allocator) -> string {
     sb: strings.Builder
     strings.builder_init(&sb, alloc)
@@ -54,6 +55,7 @@ concat_string_sep :: proc(strs: []string, sep: string, alloc := context.allocato
 }
 
 // metric = multiple of 1000 instead of 1024
+@(require_results)
 human_readable_size :: proc(
     bytes: i64,
     metric: bool = false,
@@ -84,31 +86,9 @@ human_readable_size :: proc(
     )
 }
 
+@(require_results)
 trim_nl :: proc(s: string) -> string {
     return strings.trim_suffix(s, NL)
-}
-
-is_git_dir :: proc(dirpath: string) -> (git: bool, ok: bool) {
-    if !g_prog.git.prog.found {
-        return false, true
-    }
-
-    old_dir := os.get_current_directory(context.temp_allocator)
-    chdir(dirpath) or_return
-
-    sp.command_clear(&g_prog.git)
-    sp.command_append(&g_prog.git, "rev-parse")
-    result := sp.unwrap(
-        sp.command_run(g_prog.git, sp.Exec_Opts{output = .Silent}),
-        "Could not run `git rev-parse`",
-    ) or_return
-    defer sp.result_destroy(&result)
-
-    chdir(old_dir) or_return
-
-    git = sp.result_success(result)
-    ok = true
-    return
 }
 
 delete_strings :: proc(strs: []string, alloc := context.allocator) {
@@ -116,5 +96,19 @@ delete_strings :: proc(strs: []string, alloc := context.allocator) {
         delete(str, alloc)
     }
     delete(strs, alloc)
+}
+
+_eprint :: proc(str: string, loc: runtime.Source_Code_Location) {
+    fmt.eprintfln("%v:%v:%v(): %s", loc.file_path, loc.line, loc.procedure, str)
+}
+
+eprint :: proc(args: ..any, sep: string = " ", loc := #caller_location) {
+    runtime.DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD()
+    _eprint(fmt.tprint(..args, sep = sep), loc)
+}
+
+eprintf :: proc(f: string, args: ..any, loc := #caller_location) {
+    runtime.DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD()
+    _eprint(fmt.tprintf(f, ..args), loc)
 }
 
