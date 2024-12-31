@@ -170,7 +170,12 @@ copy_file :: proc(path: string, target_path: string, loc := #caller_location) ->
     } else {
         source_file := open(path, os.O_RDONLY, loc = loc) or_return
         defer close(&source_file)
-        target_file := open(target_filepath, os.O_CREATE | os.O_WRONLY, unix_mode, loc) or_return
+        target_file := open(
+            target_filepath,
+            os.O_CREATE | os.O_WRONLY | os.O_TRUNC,
+            unix_mode,
+            loc,
+        ) or_return
         defer close(&target_file)
         for {
             buf: [1 * mem.Kilobyte]byte
