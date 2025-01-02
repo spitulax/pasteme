@@ -24,18 +24,6 @@ Prog :: struct {
 prog_init :: proc(alloc := context.allocator) -> (ok: bool) {
     runtime.DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD(alloc == context.temp_allocator)
 
-    git_err: sp.Error
-    g_prog.git, git_err = sp.command_make("git", alloc = alloc)
-    if git_err == sp.General_Error.Program_Not_Found {
-        eprintf("`git` is not found. Some features will be unavailabe")
-    } else if git_err != nil {
-        sp.unwrap(git_err) or_return
-    }
-    defer if !ok {
-        sp.command_destroy(&g_prog.git)
-    }
-    g_prog.git.opts.output = .Capture
-
     if g_prog.vault_path == "" {
         when ODIN_OS in UNIX_OS {
             config_home := os.get_env("XDG_CONFIG_HOME", context.temp_allocator)
@@ -66,7 +54,21 @@ prog_init :: proc(alloc := context.allocator) -> (ok: bool) {
 
     mkdir_if_not_exist(g_prog.vault_path) or_return
 
-    g_prog.vault_is_git = !g_prog.no_git && (is_git_dir(g_prog.vault_path) or_return)
+    if !g_prog.no_git {
+        git_err: sp.Error
+        g_prog.git, git_err = sp.command_make("git", alloc = alloc)
+        if git_err == sp.General_Error.Program_Not_Found {
+            eprintf("`git` is not found. Some features will be unavailabe")
+        } else if git_err != nil {
+            sp.unwrap(git_err) or_return
+        }
+        g_prog.git.opts.output = .Capture
+
+        g_prog.vault_is_git = is_git_dir(g_prog.vault_path) or_return
+    }
+    defer if !g_prog.no_git && !ok {
+        sp.command_destroy(&g_prog.git)
+    }
 
     return true
 }
@@ -108,7 +110,7 @@ ask :: proc(
 ) {
     runtime.DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD()
 
-    choice: int
+    choice: int = ---
     for {
         ansi_graphic(ansi.BOLD, ansi.FG_CYAN)
         fmt.print("Choose file or directory to copy: ")

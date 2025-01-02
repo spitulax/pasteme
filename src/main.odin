@@ -2,7 +2,8 @@ package pasteme
 
 // TODO: Search UI like fzf
 // TODO: Custom userdata path
-// TODO: Copy into temp dir first
+// TODO: Warn user when target path already exists
+// TODO: Copy into temp dir first if copying directory
 
 import "base:runtime"
 import "core:fmt"

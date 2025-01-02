@@ -27,6 +27,9 @@ debug: mkdir
 release: mkdir
 	odin build $(SRC_DIR) $(ARGS) -o:speed
 
+benchmark: mkdir
+	odin build $(SRC_DIR) $(ARGS) -o:speed -debug
+
 install: release
 	install -Dt $(BIN_DIR) $(BUILD_DIR)/$(PROG_NAME)
 
