@@ -9,7 +9,12 @@
   outputs = { self, nixpkgs, mypkgs, ... }@inputs:
     let
       inherit (nixpkgs) lib;
-      systems = [ "x86_64-linux" "aarch64-linux" ];
+      systems = [
+        "x86_64-linux"
+        "aarch64-linux"
+        "x86_64-darwin"
+        "aarch64-darwin"
+      ];
       eachSystem = f: lib.genAttrs systems f;
       pkgsFor = eachSystem (system:
         import nixpkgs {
