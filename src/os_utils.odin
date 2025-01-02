@@ -130,7 +130,6 @@ stat :: proc(
 @(require_results)
 copy_file :: proc(path: string, target_path: string, loc := #caller_location) -> (ok: bool) {
     runtime.DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD()
-
     mkdir_if_not_exist(target_path, loc) or_return
 
     unix_mode: int
@@ -177,8 +176,9 @@ copy_file :: proc(path: string, target_path: string, loc := #caller_location) ->
             loc,
         ) or_return
         defer close(&target_file)
-        for {
-            buf: [1 * mem.Kilobyte]byte
+        // 512 kb per write seems to perform the best
+        buf := make([]byte, 512 * mem.Kilobyte, context.temp_allocator)
+        #no_bounds_check for {
             n := read(source_file, buf[:], loc) or_return
             if n <= 0 {
                 break
