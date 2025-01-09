@@ -21,7 +21,7 @@
           inherit system;
           overlays = [
             (final: prev: {
-              odin = mypkgs.packages.${final.system}.odin-nightly;
+              odin = mypkgs.packages.${final.system}.odin;
             })
             self.overlays.default
           ];
