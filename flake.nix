@@ -41,16 +41,10 @@
 
       devShells = eachSystem (system:
         let
-          pkgs = pkgsFor.${ system};
+          pkgs = pkgsFor.${system};
         in
         {
-          default = pkgs.mkShell {
-            name = lib.getName self.packages.${system}.default + "-shell";
-            nativeBuildInputs = with pkgs; [
-              odin
-            ];
-            shellHook = "exec $SHELL";
-          };
+          default = pkgs.callPackage ./nix/shell.nix { inherit self; };
         }
       );
     };

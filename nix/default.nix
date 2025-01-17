@@ -2,11 +2,9 @@
 , lib
 , odin
 
+, version ? "git"
 , debug ? false
 }:
-let
-  version = lib.trim (lib.readFile ../VERSION);
-in
 stdenv.mkDerivation {
   pname = "pasteme";
   inherit version;
